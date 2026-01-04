@@ -63,3 +63,14 @@ If that worked, congratulations! You just did an S2I build. Now, answer this que
 *   [ ] It is hardcoded in OpenShift.
 *   [ ] The "Python Builder Image" contains a script named assemble that looks for that specific filename.
 *   [ ] The `oc new-app` command scanned your local directory before sending the request.
+
+
+# Retrospective
+
+## Day 1: Basic Pod and Service. 
+
+## Day 2: Persistence (PVC) and Health Probes. 
+
+## Day 3: Multi-container Pods (Init/Sidecar) and Service Accounts. 
+
+## Day 4: Automated Build Hooks and Image Promotion.

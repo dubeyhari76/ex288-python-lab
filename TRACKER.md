@@ -1,33 +1,36 @@
 # OpenShift Architect Tracker: Exercise EX288 🚀
 
-## Day-01 (01/01/2026)
+## Day 1: Build, Deployment & ConfigMaps
+**Date:** 01/01/2026
 
-### 1. Build & Deployment 🏗️
+### 🏗️ Phase 0.1: Build & Deployment
 * **Binary Build:** `oc start-build myapp --from-dir=. --follow`
 * **Route Verification:** `oc describe route myapp`
 * **Service Verification:** `oc describe svc myapp`
 
-### 2. Configuration (ConfigMaps) ⚙️
+### ⚙️ Phase 0.2: Configuration (ConfigMaps)
 * **Create ConfigMap:** `oc create configmap app-config --from-literal=GREETING=Namaste`
 * **Link to Deployment:** `oc set env deployment/myapp --from=configmap/app-config`
 * **View ConfigMap Details:** `oc get cm app-config -o yaml`
-* **Replace ConfigMap Content:** `oc create configmap app-config --from-literal=GREETING="Radhey Radhey Ji" --dry-run=client -o yaml | oc replace -f -`
-        
-### 3. Debugging & Maintenance 🔍
+* **Replace ConfigMap Content:**
+  ```bash
+  oc create configmap app-config --from-literal=GREETING="Radhey Radhey Ji" --dry-run=client -o yaml | oc replace -f -
+  ```
+
+### 🔍 Phase 0.3: Debugging & Maintenance
 * **Inspect Pod Environment:** `oc describe pod <pod_name>`
 * **Verify Filesystem Code:** `oc exec <pod_name> -- cat app.py`
 * **Check Internal Environment:** `oc exec <pod_name> -- env | grep GREETING`
 * **Test Local App Response:** `oc exec <pod_name> -- curl -s localhost:8080`
 * **Remove Specific Env Var:** `oc set env deployment/myapp GREETINGS-`
 
-### 4. Lifecycle & Scaling 📈
+### 📈 Phase 0.4: Lifecycle & Scaling
 * **Trigger Rolling Restart:** `oc rollout restart deployment/myapp`
 * **Scale Replicas:** `oc scale deployment myapp --replicas=3`
 * **Test Load Balancing:** `for i in {1..5}; do curl -s <route_url>; done`
 
-## Day-02 (01/02/2026)
-
-### Project: Python Health & Persistence App
+## Day 2: Python Health & Persistence App
+**Date:** 01/02/2026
 **Status:** Foundation Complete | Ready for "Legacy Migrator" Challenge
 
 ### 🏗️ Phase 1: Build & Deploy (Binary S2I)
@@ -136,3 +139,78 @@ oc set resources deployment/myapp --limits=cpu=200m,memory=512Mi --requests=cpu=
 | Multi-Attach Error | `gp3` (RWO) volume locked by a terminating Pod on a different node. | Scaled deployment to 0, then back to 1 to clear the volume lock. |
 | 403 Forbidden API | Local shell expanded `$(cat token)` on the host instead of inside the Pod. | Wrapped the `oc exec` command in single quotes (`' '`) to ensure execution inside the container. |
 | command not found (127) | Tried running `curl` inside the `busybox` sidecar which lacks that binary. | Used `-c visitor-app` to target the Python-based container which includes networking tools. |
+
+## Day 4: CI/CD Automation & Image Promotion
+**Focus:** CI/CD Automation, Quality Guardrails, and Image Promotion
+
+### 🏗️ Phase 11: Post-Commit Hooks (The Quality Guardrail)
+**Goal:** Execute logic inside your new image before it is pushed to the registry. If the hook fails, the image is discarded.
+**Key Concepts:**
+*   **Gatekeeping:** Prevents syntax errors or failed tests from entering the ImageStream.
+*   **Context:** Runs inside the newly built container but before it is "finalized."
+*   **Exit Codes:** A non-zero exit code (failure) stops the build process immediately.
+
+**Commands:**
+```bash
+# Add a Python syntax check as a post-commit hook
+oc set build-hook bc/visitor-app --post-commit --command -- python3 -m py_compile visitor_log.py
+
+# Verify the hook is configured in the BuildConfig
+oc describe bc visitor-app | grep -A 3 "Post Commit"
+```
+
+### 🤖 Phase 12: Build & Deployment Triggers
+**Goal:** Enable OpenShift to react automatically to changes in the environment.
+**Key Concepts:**
+*   **ImageChange:** Triggers a new deployment rollout whenever the specified ImageStreamTag is updated (e.g., after a successful build).
+*   **ConfigChange:** Triggers a rollout whenever the Deployment template itself changes (e.g., a new Environment Variable or Secret is added).
+
+**Commands:**
+```bash
+# View all current triggers for a deployment
+oc set triggers deployment/visitor-app
+
+# Manually add an ImageChange trigger
+oc set triggers deployment/visitor-app --from-image=visitor-app:latest -c visitor-app
+```
+
+### ❄️ Phase 13: ImageStreams & Tagging (Promotion)
+**Goal:** Move an image from a "latest/development" state to a "stable/production" state by changing its tag pointer.
+**Key Concepts:**
+*   **Immutability:** By pointing a Deployment to a `:prod` tag instead of `:latest`, you ensure the app only updates when you explicitly "promote" a new image hash to that tag.
+*   **Tagging:** Creating a pointer in an ImageStream to a specific image hash.
+
+**Commands:**
+```bash
+# Promote the 'latest' image to 'prod'
+oc tag visitor-app:latest visitor-app:prod
+
+# Update deployment to use the 'prod' tag (Frozen version)
+oc set image deployment/visitor-app visitor-app=$(oc get is visitor-app -o jsonpath='{.status.dockerImageRepository}'):prod
+
+# Update the trigger to watch 'prod' instead of 'latest'
+oc set triggers deployment/visitor-app --from-image=visitor-app:prod -c visitor-app --auto
+```
+
+### 🌐 Phase 14: Internal Networking & Service Discovery
+**Goal:** Understanding how components communicate inside the cluster without external routes.
+**Key Concepts:**
+*   **Service DNS:** The internal address format: `<service>.<namespace>.svc.cluster.local`.
+*   **Edge Termination:** SSL/TLS is handled by the OpenShift Router (the edge), while traffic to the pod is plain HTTP.
+
+**Commands:**
+```bash
+# Create a secure Edge-terminated route
+oc create route edge visitor-secure --service=visitor-app
+
+# Verify internal connectivity (Testing the DNS)
+oc exec <pod_name> -- curl http://visitor-app.dubeyhari76-dev.svc.cluster.local:8080/health
+```
+
+### 🔍 Troubleshooting Recap (Day 4)
+
+| Problem | Root Cause | Resolution |
+| :--- | :--- | :--- |
+| Build Error: Step 2/2 | Post-commit hook failed due to code syntax error. | Fix local code, ensure successful local linting, and restart build. |
+| App not updating after build | Deployment is watching a static tag (like `:prod`) instead of `:latest`. | Manually promote the image using `oc tag` or switch trigger to `:latest`. |
+| 403 Forbidden on API | Service Account lacks sufficient Roles (e.g., `view`). | Use `oc policy add-role-to-user view -z <sa-name>`. |
