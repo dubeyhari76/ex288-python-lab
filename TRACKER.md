@@ -107,3 +107,32 @@ oc set resources deployment/myapp --limits=cpu=200m,memory=512Mi --requests=cpu=
 * **Recent Events:** `oc get events --sort-by='.lastTimestamp'`
 * **Live Metrics:** `oc adm top pods`
 * **Check Env Vars:** `oc exec <pod> -- env | grep <KEY>`
+
+## Day 3: Advanced Pod Architecture & Multi-Container Patterns
+**Focus:** Advanced Pod Architecture, Security Identities, and Multi-Container Patterns
+
+### 🏗️ Phase 8: The Initialization Layer (Init Containers)
+**Goal:** Execute setup logic before the main application starts.
+**Implementation:** Added an `init-setup` container using the `busybox` image.
+**Action:** Successfully created `/mnt/data/version.txt` on the persistent volume.
+**Lesson:** Init containers must exit (Exit Code 0) before the main container starts.
+
+### 🔐 Phase 9: Service Accounts & RBAC (Pod Identity)
+**Goal:** Grant the Pod permissions to talk to the OpenShift API.
+**Implementation:** Created the `visitor-admin` Service Account and bound it to the `view` Role.
+**Verification:** Used `curl` with the projected token at `/var/run/secrets/kubernetes.io/serviceaccount/token` to list pods in the namespace.
+**Insight:** Target the specific container (e.g., `-c visitor-app`) when executing commands if the default container lacks the necessary tools like `curl`.
+
+### 🛰️ Phase 10: The Sidecar Pattern (Multi-Container Pods)
+**Goal:** Add secondary functionality (logging) without modifying the main app code.
+**Implementation:** Added `sidecar-logger` to run `tail -f /mnt/data/history.txt`.
+**Shared Resources:** Both containers share the same network (localhost) and the same log-pvc mount.
+**Verification:** `oc logs <pod> -c sidecar-logger` shows the real-time stream of the history log.
+
+### 🔍 Troubleshooting Highlights (The "Architect's Notebook")
+
+| Issue | Root Cause | Resolution |
+| :--- | :--- | :--- |
+| Multi-Attach Error | `gp3` (RWO) volume locked by a terminating Pod on a different node. | Scaled deployment to 0, then back to 1 to clear the volume lock. |
+| 403 Forbidden API | Local shell expanded `$(cat token)` on the host instead of inside the Pod. | Wrapped the `oc exec` command in single quotes (`' '`) to ensure execution inside the container. |
+| command not found (127) | Tried running `curl` inside the `busybox` sidecar which lacks that binary. | Used `-c visitor-app` to target the Python-based container which includes networking tools. |
